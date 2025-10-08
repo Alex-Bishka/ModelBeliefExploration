@@ -217,6 +217,112 @@
             color: #999;
             font-size: 16px;
         }
+
+        .header-buttons {
+            display: flex;
+            gap: 10px;
+        }
+
+        .clear-all-button {
+            background: #ef4444;
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 8px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+
+        .clear-all-button:hover {
+            background: #dc2626;
+        }
+
+        .experiment-card-wrapper {
+            position: relative;
+        }
+
+        .experiment-model-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 10px;
+        }
+
+        .delete-button {
+            background: #ef4444;
+            color: white;
+            border: none;
+            padding: 6px 12px;
+            border-radius: 6px;
+            font-size: 11px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+
+        .delete-button:hover {
+            background: #dc2626;
+        }
+
+        .label-section {
+            margin-top: 12px;
+            padding-top: 12px;
+            border-top: 1px solid #e5e7eb;
+        }
+
+        .label-input-group {
+            display: flex;
+            gap: 8px;
+            align-items: center;
+        }
+
+        .label-input {
+            flex: 1;
+            padding: 6px 10px;
+            border: 1px solid #e5e7eb;
+            border-radius: 6px;
+            font-size: 13px;
+            font-family: inherit;
+        }
+
+        .label-input:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+
+        .label-save-button {
+            background: #667eea;
+            color: white;
+            border: none;
+            padding: 6px 12px;
+            border-radius: 6px;
+            font-size: 12px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+
+        .label-save-button:hover {
+            background: #764ba2;
+        }
+
+        .current-label {
+            font-size: 12px;
+            color: #667eea;
+            font-weight: 600;
+            padding: 4px 8px;
+            background: #ede9fe;
+            border-radius: 4px;
+            display: inline-block;
+            margin-top: 8px;
+        }
+
+        .label-placeholder {
+            font-size: 12px;
+            color: #999;
+            font-style: italic;
+        }
     </style>
 </head>
 <body>
@@ -227,7 +333,10 @@
                     <h1>🔍 Identity Test Results Browser</h1>
                     <p class="subtitle">Browse and analyze model identity test experiments</p>
                 </div>
-                <a href="/run" class="new-experiment-button">+ New Experiment</a>
+                <div class="header-buttons">
+                    <button class="clear-all-button" onclick="clearAllExperiments()">🗑️ Clear All</button>
+                    <a href="/run" class="new-experiment-button">+ New Experiment</a>
+                </div>
             </div>
 
             <div class="stats">
@@ -249,46 +358,63 @@
         {% if experiments %}
         <div class="experiments-grid">
             {% for exp in experiments %}
-            <a href="/experiment/{{ exp.path }}" class="experiment-card">
-                <div class="experiment-header">
-                    <div class="experiment-timestamp">{{ exp.timestamp }}</div>
-                    <div class="badges">
-                        {% if exp.has_token_probs %}
-                        <span class="badge probs">🎲 PROBS</span>
-                        {% endif %}
+            <div class="experiment-card-wrapper">
+                <a href="/experiment/{{ exp.path }}" class="experiment-card">
+                    <div class="experiment-header">
+                        <div class="experiment-timestamp">{{ exp.timestamp }}</div>
+                        <div class="badges">
+                            {% if exp.has_token_probs %}
+                            <span class="badge probs">🎲 PROBS</span>
+                            {% endif %}
+                            {% if exp.revealed %}
+                            <span class="badge revealed">✓ REVEALED</span>
+                            {% else %}
+                            <span class="badge concealed">✗ CONCEALED</span>
+                            {% endif %}
+                        </div>
+                    </div>
+
+                    <div class="experiment-model-row">
+                        <div class="experiment-model">{{ exp.target_model }}</div>
+                        <button class="delete-button" onclick="deleteExperiment(event, '{{ exp.path }}')">Delete</button>
+                    </div>
+
+                    <div class="experiment-details">
+                        <div class="experiment-detail-row">
+                            <span class="detail-label">Style:</span>
+                            <span>{{ exp.style }}</span>
+                        </div>
+                        <div class="experiment-detail-row">
+                            <span class="detail-label">Rounds:</span>
+                            <span>{{ exp.rounds }}/{{ exp.max_rounds }}</span>
+                        </div>
+                        <div class="experiment-detail-row">
+                            <span class="detail-label">Interrogator:</span>
+                            <span>{{ exp.interrogator }}</span>
+                        </div>
+                    </div>
+
+                    <div class="status-banner {% if exp.revealed %}revealed{% else %}concealed{% endif %}">
                         {% if exp.revealed %}
-                        <span class="badge revealed">✓ REVEALED</span>
+                        ✅ Identity revealed as: <strong>{{ exp.revealed_identity }}</strong>
                         {% else %}
-                        <span class="badge concealed">✗ CONCEALED</span>
+                        ❌ Identity remained: <strong>{{ exp.revealed_identity }}</strong>
                         {% endif %}
                     </div>
-                </div>
 
-                <div class="experiment-model">{{ exp.target_model }}</div>
-
-                <div class="experiment-details">
-                    <div class="experiment-detail-row">
-                        <span class="detail-label">Style:</span>
-                        <span>{{ exp.style }}</span>
+                    <div class="label-section" onclick="event.preventDefault(); event.stopPropagation();">
+                        {% if exp.label %}
+                        <div class="current-label">🏷️ {{ exp.label }}</div>
+                        {% else %}
+                        <div class="label-placeholder">No label set</div>
+                        {% endif %}
+                        <div class="label-input-group">
+                            <input type="text" class="label-input" placeholder="Add label (e.g., important, weird, cool...)" value="{{ exp.label }}" data-path="{{ exp.path }}">
+                            <button class="label-save-button" onclick="saveLabel(event, '{{ exp.path }}', this.previousElementSibling)">Save</button>
+                        </div>
                     </div>
-                    <div class="experiment-detail-row">
-                        <span class="detail-label">Rounds:</span>
-                        <span>{{ exp.rounds }}/{{ exp.max_rounds }}</span>
-                    </div>
-                    <div class="experiment-detail-row">
-                        <span class="detail-label">Interrogator:</span>
-                        <span>{{ exp.interrogator }}</span>
-                    </div>
-                </div>
-
-                <div class="status-banner {% if exp.revealed %}revealed{% else %}concealed{% endif %}">
-                    {% if exp.revealed %}
-                    ✅ Identity revealed as: <strong>{{ exp.revealed_identity }}</strong>
-                    {% else %}
-                    ❌ Identity remained: <strong>{{ exp.revealed_identity }}</strong>
-                    {% endif %}
-                </div>
-            </a>
+                </a>
+            </div>
             {% endfor %}
         </div>
         {% else %}
@@ -298,5 +424,78 @@
         </div>
         {% endif %}
     </div>
+
+    <script>
+        async function deleteExperiment(event, path) {
+            event.preventDefault();
+            event.stopPropagation();
+
+            if (!confirm('Are you sure you want to delete this experiment?')) {
+                return;
+            }
+
+            try {
+                const response = await fetch('/api/delete-experiment', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({path: path})
+                });
+
+                if (response.ok) {
+                    location.reload();
+                } else {
+                    alert('Failed to delete experiment');
+                }
+            } catch (error) {
+                alert('Error deleting experiment: ' + error);
+            }
+        }
+
+        async function clearAllExperiments() {
+            if (!confirm('Are you sure you want to delete ALL experiments? This cannot be undone!')) {
+                return;
+            }
+
+            try {
+                const response = await fetch('/api/clear-all-experiments', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'}
+                });
+
+                const data = await response.json();
+                if (response.ok) {
+                    alert(`Deleted ${data.count} experiment(s)`);
+                    location.reload();
+                } else {
+                    alert('Failed to clear experiments');
+                }
+            } catch (error) {
+                alert('Error clearing experiments: ' + error);
+            }
+        }
+
+        async function saveLabel(event, path, inputElement) {
+            event.preventDefault();
+            event.stopPropagation();
+
+            const label = inputElement.value.trim();
+
+            try {
+                const response = await fetch('/api/update-label', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({path: path, label: label})
+                });
+
+                if (response.ok) {
+                    location.reload();
+                } else {
+                    alert('Failed to save label');
+                }
+            } catch (error) {
+                alert('Error saving label: ' + error);
+            }
+        }
+    </script>
 </body>
 </html>

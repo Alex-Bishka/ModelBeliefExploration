@@ -99,6 +99,7 @@ class ExperimentLoader:
                     'revealed': results.get('identity_revealed', results.get('gemma_admitted_being_gemma', False)),
                     'revealed_identity': results.get('revealed_identity', 'Unknown'),
                     'has_token_probs': ExperimentLoader._check_has_token_probs(results),
+                    'label': metadata.get('label', ''),
                 })
             except (json.JSONDecodeError, KeyError) as e:
                 # Skip invalid files
@@ -375,6 +376,94 @@ def chat_interface(session_id):
 
     session_data = active_sessions[session_id]
     return render_template('chat.html', session_id=session_id, metadata=session_data['metadata'])
+
+
+@app.route('/api/delete-experiment', methods=['POST'])
+def delete_experiment():
+    """Delete a specific experiment."""
+    data = request.json
+    experiment_path = data.get('path')
+
+    if not experiment_path:
+        return jsonify({'error': 'No path provided'}), 400
+
+    try:
+        full_path = Path(experiment_path)
+        if not full_path.exists():
+            return jsonify({'error': 'Experiment not found'}), 404
+
+        # Delete the file
+        full_path.unlink()
+
+        # Try to delete parent directory if empty
+        parent_dir = full_path.parent
+        try:
+            if parent_dir != EXPERIMENTS_DIR and not any(parent_dir.iterdir()):
+                parent_dir.rmdir()
+        except:
+            pass
+
+        return jsonify({'status': 'deleted'})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/clear-all-experiments', methods=['POST'])
+def clear_all_experiments():
+    """Delete all experiments."""
+    try:
+        deleted_count = 0
+        for json_file in EXPERIMENTS_DIR.rglob("*.json"):
+            try:
+                json_file.unlink()
+                deleted_count += 1
+            except:
+                pass
+
+        # Clean up empty directories
+        for dir_path in EXPERIMENTS_DIR.rglob("*"):
+            if dir_path.is_dir() and not any(dir_path.iterdir()):
+                try:
+                    dir_path.rmdir()
+                except:
+                    pass
+
+        return jsonify({'status': 'cleared', 'count': deleted_count})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/update-label', methods=['POST'])
+def update_label():
+    """Update the label for an experiment."""
+    data = request.json
+    experiment_path = data.get('path')
+    label = data.get('label', '')
+
+    if not experiment_path:
+        return jsonify({'error': 'No path provided'}), 400
+
+    try:
+        full_path = Path(experiment_path)
+        if not full_path.exists():
+            return jsonify({'error': 'Experiment not found'}), 404
+
+        # Load experiment data
+        with open(full_path, 'r') as f:
+            experiment_data = json.load(f)
+
+        # Update label
+        if 'metadata' not in experiment_data:
+            experiment_data['metadata'] = {}
+        experiment_data['metadata']['label'] = label
+
+        # Save back
+        with open(full_path, 'w') as f:
+            json.dump(experiment_data, f, indent=2)
+
+        return jsonify({'status': 'updated', 'label': label})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
 
 
 if __name__ == '__main__':
