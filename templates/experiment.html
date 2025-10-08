@@ -1,0 +1,445 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Experiment Details - {{ experiment.metadata.timestamp }}</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            background: #f5f7fa;
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+        }
+
+        .back-button {
+            display: inline-block;
+            color: #667eea;
+            text-decoration: none;
+            margin-bottom: 20px;
+            font-weight: 500;
+            transition: color 0.2s;
+        }
+
+        .back-button:hover {
+            color: #764ba2;
+        }
+
+        .dashboard {
+            background: white;
+            border-radius: 16px;
+            padding: 30px;
+            margin-bottom: 30px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+        }
+
+        h1 {
+            color: #333;
+            font-size: 28px;
+            margin-bottom: 20px;
+        }
+
+        .metadata-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 20px;
+            margin-bottom: 20px;
+        }
+
+        .metadata-item {
+            background: #f7f9fc;
+            padding: 15px;
+            border-radius: 8px;
+        }
+
+        .metadata-label {
+            color: #666;
+            font-size: 12px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            margin-bottom: 5px;
+        }
+
+        .metadata-value {
+            color: #333;
+            font-size: 16px;
+            font-weight: 500;
+        }
+
+        .status-banner {
+            padding: 20px;
+            border-radius: 8px;
+            font-size: 16px;
+            font-weight: 500;
+            margin-top: 20px;
+        }
+
+        .status-banner.revealed {
+            background: #d1fae5;
+            color: #065f46;
+        }
+
+        .status-banner.concealed {
+            background: #fee2e2;
+            color: #991b1b;
+        }
+
+        .conversation {
+            background: white;
+            border-radius: 16px;
+            padding: 30px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+        }
+
+        h2 {
+            color: #333;
+            font-size: 24px;
+            margin-bottom: 20px;
+            padding-bottom: 15px;
+            border-bottom: 2px solid #e5e7eb;
+        }
+
+        .round {
+            margin-bottom: 30px;
+            padding: 20px;
+            background: #f9fafb;
+            border-radius: 8px;
+            border-left: 4px solid #e5e7eb;
+        }
+
+        .round.revealed {
+            border-left-color: #10b981;
+            background: #ecfdf5;
+        }
+
+        .round-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 15px;
+        }
+
+        .round-number {
+            font-size: 18px;
+            font-weight: bold;
+            color: #667eea;
+        }
+
+        .round-badge {
+            padding: 4px 12px;
+            border-radius: 4px;
+            font-size: 11px;
+            font-weight: bold;
+            text-transform: uppercase;
+            background: #10b981;
+            color: white;
+        }
+
+        .message {
+            margin-bottom: 20px;
+        }
+
+        .message-label {
+            font-size: 13px;
+            font-weight: 600;
+            color: #667eea;
+            margin-bottom: 8px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .message-content {
+            background: white;
+            padding: 15px;
+            border-radius: 6px;
+            line-height: 1.6;
+            color: #333;
+            white-space: pre-wrap;
+        }
+
+        .token-probs-section {
+            margin-top: 20px;
+            padding-top: 20px;
+            border-top: 2px solid #e5e7eb;
+        }
+
+        .token-probs-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 15px;
+        }
+
+        .token-probs-title {
+            font-size: 16px;
+            font-weight: 600;
+            color: #333;
+        }
+
+        .toggle-button {
+            background: #667eea;
+            color: white;
+            border: none;
+            padding: 8px 16px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 13px;
+            font-weight: 500;
+            transition: background 0.2s;
+        }
+
+        .toggle-button:hover {
+            background: #764ba2;
+        }
+
+        .token-probs-content {
+            display: none;
+        }
+
+        .token-probs-content.visible {
+            display: block;
+        }
+
+        .token-grid {
+            display: grid;
+            gap: 15px;
+        }
+
+        .token-item {
+            background: white;
+            border: 1px solid #e5e7eb;
+            border-radius: 6px;
+            padding: 12px;
+        }
+
+        .token-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 10px;
+        }
+
+        .token-text {
+            font-family: 'Monaco', 'Courier New', monospace;
+            background: #f3f4f6;
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-size: 14px;
+            color: #1f2937;
+            font-weight: 600;
+        }
+
+        .token-prob {
+            font-weight: bold;
+            font-size: 14px;
+        }
+
+        .prob-high { color: #10b981; }
+        .prob-medium { color: #f59e0b; }
+        .prob-low { color: #ef4444; }
+
+        .alternatives {
+            margin-top: 10px;
+        }
+
+        .alternatives-label {
+            font-size: 12px;
+            color: #666;
+            margin-bottom: 8px;
+            font-weight: 500;
+        }
+
+        .alternative-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 6px 8px;
+            background: #f9fafb;
+            border-radius: 4px;
+            margin-bottom: 4px;
+        }
+
+        .alternative-token {
+            font-family: 'Monaco', 'Courier New', monospace;
+            font-size: 13px;
+            color: #4b5563;
+        }
+
+        .alternative-prob {
+            font-size: 12px;
+            font-weight: 500;
+        }
+
+        .prob-bar {
+            height: 4px;
+            background: #e5e7eb;
+            border-radius: 2px;
+            margin-top: 8px;
+            overflow: hidden;
+        }
+
+        .prob-fill {
+            height: 100%;
+            transition: width 0.3s ease;
+        }
+
+        .prob-fill.high { background: #10b981; }
+        .prob-fill.medium { background: #f59e0b; }
+        .prob-fill.low { background: #ef4444; }
+
+        .no-token-probs {
+            padding: 20px;
+            text-align: center;
+            color: #666;
+            font-style: italic;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <a href="/" class="back-button">← Back to Experiments</a>
+
+        <div class="dashboard">
+            <h1>📊 Experiment Details</h1>
+
+            <div class="metadata-grid">
+                <div class="metadata-item">
+                    <div class="metadata-label">Timestamp</div>
+                    <div class="metadata-value">{{ experiment.metadata.timestamp }}</div>
+                </div>
+                <div class="metadata-item">
+                    <div class="metadata-label">Target Model</div>
+                    <div class="metadata-value">{{ experiment.metadata.target_model }}</div>
+                </div>
+                <div class="metadata-item">
+                    <div class="metadata-label">Interrogator</div>
+                    <div class="metadata-value">{{ experiment.metadata.get('interrogator_model', experiment.metadata.get('interrogator', 'N/A')) }}</div>
+                </div>
+                <div class="metadata-item">
+                    <div class="metadata-label">Judge</div>
+                    <div class="metadata-value">{{ experiment.metadata.get('judge_model', experiment.metadata.get('judge', 'N/A')) }}</div>
+                </div>
+                <div class="metadata-item">
+                    <div class="metadata-label">Style</div>
+                    <div class="metadata-value">{{ experiment.metadata.interrogation_style }}</div>
+                </div>
+                <div class="metadata-item">
+                    <div class="metadata-label">Rounds</div>
+                    <div class="metadata-value">{{ experiment.metadata.get('actual_rounds', experiment.metadata.get('total_rounds', 'N/A')) }}/{{ experiment.metadata.get('max_rounds', 'N/A') }}</div>
+                </div>
+            </div>
+
+            {% set revealed = experiment.results.get('identity_revealed', experiment.results.get('gemma_admitted_being_gemma', False)) %}
+            <div class="status-banner {% if revealed %}revealed{% else %}concealed{% endif %}">
+                {% if revealed %}
+                ✅ Identity was revealed as: <strong>{{ experiment.results.revealed_identity }}</strong>
+                {% else %}
+                ❌ Identity remained concealed as: <strong>{{ experiment.results.get('revealed_identity', 'Unknown') }}</strong>
+                {% endif %}
+            </div>
+        </div>
+
+        <div class="conversation">
+            <h2>💬 Conversation Transcript</h2>
+
+            {% for round in experiment.results.full_conversation_history %}
+            {% set is_revealing = experiment.results.get('final_question_that_revealed_identity', '') == round.question %}
+            <div class="round {% if is_revealing %}revealed{% endif %}">
+                <div class="round-header">
+                    <div class="round-number">Round {{ round.round }}</div>
+                    {% if is_revealing %}
+                    <div class="round-badge">🔓 Identity Revealed</div>
+                    {% endif %}
+                </div>
+
+                <div class="message">
+                    <div class="message-label">🔍 Question</div>
+                    <div class="message-content">{{ round.question if round.question else "[empty question]" }}</div>
+                </div>
+
+                <div class="message">
+                    <div class="message-label">💬 Answer</div>
+                    <div class="message-content">{{ round.answer }}</div>
+                </div>
+
+                {% if round.token_probabilities %}
+                <div class="token-probs-section">
+                    <div class="token-probs-header">
+                        <div class="token-probs-title">🎲 Token Probabilities ({{ round.token_probabilities|length }} tokens)</div>
+                        <button class="toggle-button" onclick="toggleTokenProbs('round-{{ round.round }}')">
+                            Show All Tokens
+                        </button>
+                    </div>
+
+                    <div class="token-probs-content" id="round-{{ round.round }}-probs">
+                        <div class="token-grid">
+                            {% for token_data in round.token_probabilities %}
+                            <div class="token-item">
+                                <div class="token-header">
+                                    <span class="token-text">{{ token_data.token|e }}</span>
+                                    <span class="token-prob {{ 'prob-high' if (token_data.logprob|float|exp * 100) > 80 else ('prob-medium' if (token_data.logprob|float|exp * 100) > 50 else 'prob-low') }}">
+                                        {{ "%.2f"|format(token_data.logprob|float|exp * 100) }}%
+                                    </span>
+                                </div>
+
+                                <div class="prob-bar">
+                                    <div class="prob-fill {{ 'high' if (token_data.logprob|float|exp * 100) > 80 else ('medium' if (token_data.logprob|float|exp * 100) > 50 else 'low') }}"
+                                         style="width: {{ token_data.logprob|float|exp * 100 }}%"></div>
+                                </div>
+
+                                {% if token_data.top_logprobs %}
+                                <div class="alternatives">
+                                    <div class="alternatives-label">Top alternatives:</div>
+                                    {% for alt in token_data.top_logprobs %}
+                                    <div class="alternative-item">
+                                        <span class="alternative-token">{{ alt.token|e }}</span>
+                                        <span class="alternative-prob {{ 'prob-high' if (alt.logprob|float|exp * 100) > 80 else ('prob-medium' if (alt.logprob|float|exp * 100) > 50 else 'prob-low') }}">
+                                            {{ "%.2f"|format(alt.logprob|float|exp * 100) }}%
+                                        </span>
+                                    </div>
+                                    {% endfor %}
+                                </div>
+                                {% endif %}
+                            </div>
+                            {% endfor %}
+                        </div>
+                    </div>
+                </div>
+                {% endif %}
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+
+    <script>
+        function toggleTokenProbs(roundId) {
+            const content = document.getElementById(roundId + '-probs');
+            const button = event.target;
+
+            if (content.classList.contains('visible')) {
+                content.classList.remove('visible');
+                button.textContent = 'Show All Tokens';
+            } else {
+                content.classList.add('visible');
+                button.textContent = 'Hide Tokens';
+            }
+        }
+
+        // Add custom filter for exp in Jinja
+        function exp(value) {
+            return Math.exp(value);
+        }
+    </script>
+</body>
+</html>

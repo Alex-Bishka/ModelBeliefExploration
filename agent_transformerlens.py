@@ -1,0 +1,254 @@
+import torch
+import numpy as np
+from transformers import AutoTokenizer, AutoModelForCausalLM
+from typing import Optional, List, Dict, Any
+from logger import logger
+
+
+class AgentTransformerLens:
+    """
+    Agent class using transformers library for model interaction and token probabilities.
+
+    Provides:
+    - Token probabilities (logprobs)
+    - Full control over generation
+    - Access to model outputs
+    """
+
+    def __init__(
+        self,
+        model_name: str,
+        system_prompt: str = "",
+        device: str = "cuda",
+        dtype: torch.dtype = torch.float16
+    ):
+        """
+        Initialize agent with transformers library.
+
+        Args:
+            model_name: HuggingFace model name (e.g., "google/gemma-2-2b-it")
+            system_prompt: System prompt for the agent
+            device: Device to run on ("cuda" or "cpu")
+            dtype: Model dtype (torch.float16 recommended for GPU)
+        """
+        self.system_prompt = system_prompt
+        self.model_name = model_name
+        self.device = device
+        self.dtype = dtype
+        self.conversation_history: List[Dict[str, str]] = []
+
+        logger.info(f"Loading model {model_name}...")
+        logger.info(f"Device: {device}, dtype: {dtype}")
+
+        # Load model with transformers
+        self.tokenizer = AutoTokenizer.from_pretrained(model_name)
+        self.model = AutoModelForCausalLM.from_pretrained(
+            model_name,
+            torch_dtype=dtype,
+            device_map=device if device == "cuda" else None
+        )
+        if device == "cpu":
+            self.model = self.model.to(device)
+
+        logger.info(f"Model loaded successfully. Vocab size: {self.tokenizer.vocab_size}")
+
+    def _format_messages_to_prompt(self, messages: List[Dict[str, str]]) -> str:
+        """
+        Format conversation messages into a prompt string.
+
+        Handles models that don't support system messages (like Gemma) by
+        prepending the system prompt to the first user message.
+
+        Args:
+            messages: List of message dicts with 'role' and 'content'
+
+        Returns:
+            Formatted prompt string
+        """
+        # Gemma doesn't support system role, so we need to handle it specially
+        processed_messages = []
+        system_content = None
+
+        for msg in messages:
+            if msg['role'] == 'system':
+                # Store system content to prepend to first user message
+                system_content = msg['content']
+            else:
+                processed_messages.append(msg)
+
+        # Prepend system content to first user message if present
+        if system_content and processed_messages:
+            for i, msg in enumerate(processed_messages):
+                if msg['role'] == 'user':
+                    processed_messages[i] = {
+                        'role': 'user',
+                        'content': f"{system_content}\n\n{msg['content']}"
+                    }
+                    break
+
+        # Use the tokenizer's chat template if available
+        if hasattr(self.tokenizer, 'apply_chat_template'):
+            return self.tokenizer.apply_chat_template(
+                processed_messages,
+                tokenize=False,
+                add_generation_prompt=True
+            )
+        else:
+            # Fallback: simple formatting
+            prompt_parts = []
+            for msg in processed_messages:
+                role = msg['role']
+                content = msg['content']
+                if role == 'user':
+                    prompt_parts.append(f"User: {content}")
+                elif role == 'assistant':
+                    prompt_parts.append(f"Assistant: {content}")
+            prompt_parts.append("Assistant:")
+            return "\n".join(prompt_parts)
+
+    def call_agent_with_probs(
+        self,
+        user_prompt: str,
+        preserve_conversation_history: bool = False,
+        max_new_tokens: int = 512,
+        temperature: float = 1.0,
+        top_k_logprobs: int = 5
+    ) -> Dict[str, Any]:
+        """
+        Generate response with full probability and activation data.
+
+        Args:
+            user_prompt: The user's message
+            preserve_conversation_history: Whether to keep conversation history
+            max_new_tokens: Maximum tokens to generate
+            temperature: Sampling temperature
+            top_k_logprobs: Number of top token probabilities to return
+
+        Returns:
+            Dictionary containing:
+                - text: The response text
+                - token_probabilities: List of token probability data
+                - tokens: List of generated token strings
+                - logits: Full logits for each position (optional, can be large)
+        """
+        # Build messages
+        messages = []
+
+        if self.system_prompt and len(self.conversation_history) == 0:
+            messages.append({
+                "role": "system",
+                "content": self.system_prompt
+            })
+
+        # Add conversation history
+        messages.extend(self.conversation_history)
+
+        # Add new user message
+        messages.append({
+            "role": "user",
+            "content": user_prompt
+        })
+
+        # Format to prompt
+        prompt = self._format_messages_to_prompt(messages)
+
+        # Tokenize
+        input_ids = self.tokenizer.encode(prompt, return_tensors="pt").to(self.device)
+
+        logger.info(f"Generating with {input_ids.shape[1]} prompt tokens, max {max_new_tokens} new tokens")
+
+        # Generate with full outputs
+        generated_tokens = []
+        token_probabilities = []
+
+        with torch.no_grad():
+            current_ids = input_ids
+
+            for step in range(max_new_tokens):
+                # Run model
+                outputs = self.model(current_ids)
+                logits = outputs.logits  # Shape: [batch, seq_len, vocab_size]
+
+                # Get logits for next token (last position)
+                next_token_logits = logits[0, -1, :]  # Shape: [vocab_size]
+
+                # Apply temperature
+                if temperature != 1.0:
+                    next_token_logits = next_token_logits / temperature
+
+                # Convert to probabilities
+                probs = torch.softmax(next_token_logits, dim=-1)
+                log_probs = torch.log_softmax(next_token_logits, dim=-1)
+
+                # Sample next token
+                next_token = torch.multinomial(probs, num_samples=1)
+                next_token_id = next_token.item()
+
+                # Get top-k alternatives
+                top_k_probs, top_k_indices = torch.topk(probs, k=min(top_k_logprobs, len(probs)))
+
+                # Decode tokens
+                next_token_str = self.tokenizer.decode([next_token_id])
+
+                # Store token probability info
+                token_entry = {
+                    "token": next_token_str,
+                    "token_id": next_token_id,
+                    "logprob": log_probs[next_token_id].item(),
+                    "prob": probs[next_token_id].item(),
+                    "top_logprobs": []
+                }
+
+                for i in range(len(top_k_indices)):
+                    alt_token_id = top_k_indices[i].item()
+                    alt_token_str = self.tokenizer.decode([alt_token_id])
+                    token_entry["top_logprobs"].append({
+                        "token": alt_token_str,
+                        "token_id": alt_token_id,
+                        "logprob": log_probs[alt_token_id].item(),
+                        "prob": top_k_probs[i].item()
+                    })
+
+                token_probabilities.append(token_entry)
+                generated_tokens.append(next_token_str)
+
+                # Check for EOS
+                if next_token_id == self.tokenizer.eos_token_id:
+                    break
+
+                # Append to sequence
+                current_ids = torch.cat([current_ids, next_token.unsqueeze(0)], dim=1)
+
+        # Decode full response
+        text_response = "".join(generated_tokens)
+
+        # Update conversation history if requested
+        if preserve_conversation_history:
+            self.conversation_history.append({
+                "role": "user",
+                "content": user_prompt
+            })
+            self.conversation_history.append({
+                "role": "assistant",
+                "content": text_response
+            })
+
+        return {
+            "text": text_response,
+            "token_probabilities": token_probabilities,
+            "tokens": generated_tokens
+        }
+
+    def call_agent(self, user_prompt: str, preserve_conversation_history: bool = False) -> str:
+        """
+        Standard agent call without detailed probability tracking.
+
+        Args:
+            user_prompt: The user's message
+            preserve_conversation_history: Whether to keep conversation history
+
+        Returns:
+            String response from the model
+        """
+        response_data = self.call_agent_with_probs(user_prompt, preserve_conversation_history)
+        return response_data["text"]

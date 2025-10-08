@@ -1,0 +1,302 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Identity Test Results Browser</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+
+        header {
+            background: white;
+            border-radius: 16px;
+            padding: 30px;
+            margin-bottom: 30px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+        }
+
+        .header-top {
+            display: flex;
+            justify-content: space-between;
+            align-items: start;
+            margin-bottom: 20px;
+        }
+
+        h1 {
+            color: #667eea;
+            font-size: 32px;
+            margin-bottom: 10px;
+        }
+
+        .subtitle {
+            color: #666;
+            font-size: 16px;
+        }
+
+        .new-experiment-button {
+            background: #10b981;
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 8px;
+            font-weight: 600;
+            cursor: pointer;
+            text-decoration: none;
+            display: inline-block;
+            transition: background 0.2s;
+        }
+
+        .new-experiment-button:hover {
+            background: #059669;
+        }
+
+        .stats {
+            display: flex;
+            gap: 20px;
+            margin-top: 20px;
+        }
+
+        .stat-card {
+            background: #f7f9fc;
+            padding: 15px 20px;
+            border-radius: 8px;
+            flex: 1;
+        }
+
+        .stat-label {
+            color: #666;
+            font-size: 12px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+
+        .stat-value {
+            color: #333;
+            font-size: 24px;
+            font-weight: bold;
+            margin-top: 5px;
+        }
+
+        .experiments-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(350px, 1fr));
+            gap: 20px;
+        }
+
+        .experiment-card {
+            background: white;
+            border-radius: 12px;
+            padding: 20px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+            transition: all 0.3s ease;
+            cursor: pointer;
+            text-decoration: none;
+            color: inherit;
+            display: block;
+        }
+
+        .experiment-card:hover {
+            transform: translateY(-4px);
+            box-shadow: 0 8px 24px rgba(0,0,0,0.15);
+        }
+
+        .experiment-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: start;
+            margin-bottom: 15px;
+        }
+
+        .experiment-timestamp {
+            font-size: 14px;
+            color: #666;
+            font-weight: 500;
+        }
+
+        .badges {
+            display: flex;
+            gap: 5px;
+        }
+
+        .badge {
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-size: 11px;
+            font-weight: bold;
+            text-transform: uppercase;
+        }
+
+        .badge.revealed {
+            background: #10b981;
+            color: white;
+        }
+
+        .badge.concealed {
+            background: #ef4444;
+            color: white;
+        }
+
+        .badge.probs {
+            background: #f59e0b;
+            color: white;
+        }
+
+        .experiment-model {
+            font-size: 16px;
+            font-weight: bold;
+            color: #667eea;
+            margin-bottom: 10px;
+        }
+
+        .experiment-details {
+            font-size: 13px;
+            color: #666;
+            line-height: 1.6;
+        }
+
+        .experiment-detail-row {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 5px;
+        }
+
+        .detail-label {
+            font-weight: 500;
+            color: #333;
+        }
+
+        .status-banner {
+            margin-top: 15px;
+            padding: 10px;
+            border-radius: 6px;
+            font-size: 13px;
+            font-weight: 500;
+        }
+
+        .status-banner.revealed {
+            background: #d1fae5;
+            color: #065f46;
+        }
+
+        .status-banner.concealed {
+            background: #fee2e2;
+            color: #991b1b;
+        }
+
+        .no-experiments {
+            background: white;
+            border-radius: 12px;
+            padding: 60px 40px;
+            text-align: center;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+        }
+
+        .no-experiments h2 {
+            color: #666;
+            font-size: 24px;
+            margin-bottom: 10px;
+        }
+
+        .no-experiments p {
+            color: #999;
+            font-size: 16px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <div class="header-top">
+                <div>
+                    <h1>🔍 Identity Test Results Browser</h1>
+                    <p class="subtitle">Browse and analyze model identity test experiments</p>
+                </div>
+                <a href="/run" class="new-experiment-button">+ New Experiment</a>
+            </div>
+
+            <div class="stats">
+                <div class="stat-card">
+                    <div class="stat-label">Total Experiments</div>
+                    <div class="stat-value">{{ experiments|length }}</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-label">Identity Revealed</div>
+                    <div class="stat-value">{{ experiments|selectattr('revealed')|list|length }}</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-label">With Token Probs</div>
+                    <div class="stat-value">{{ experiments|selectattr('has_token_probs')|list|length }}</div>
+                </div>
+            </div>
+        </header>
+
+        {% if experiments %}
+        <div class="experiments-grid">
+            {% for exp in experiments %}
+            <a href="/experiment/{{ exp.path }}" class="experiment-card">
+                <div class="experiment-header">
+                    <div class="experiment-timestamp">{{ exp.timestamp }}</div>
+                    <div class="badges">
+                        {% if exp.has_token_probs %}
+                        <span class="badge probs">🎲 PROBS</span>
+                        {% endif %}
+                        {% if exp.revealed %}
+                        <span class="badge revealed">✓ REVEALED</span>
+                        {% else %}
+                        <span class="badge concealed">✗ CONCEALED</span>
+                        {% endif %}
+                    </div>
+                </div>
+
+                <div class="experiment-model">{{ exp.target_model }}</div>
+
+                <div class="experiment-details">
+                    <div class="experiment-detail-row">
+                        <span class="detail-label">Style:</span>
+                        <span>{{ exp.style }}</span>
+                    </div>
+                    <div class="experiment-detail-row">
+                        <span class="detail-label">Rounds:</span>
+                        <span>{{ exp.rounds }}/{{ exp.max_rounds }}</span>
+                    </div>
+                    <div class="experiment-detail-row">
+                        <span class="detail-label">Interrogator:</span>
+                        <span>{{ exp.interrogator }}</span>
+                    </div>
+                </div>
+
+                <div class="status-banner {% if exp.revealed %}revealed{% else %}concealed{% endif %}">
+                    {% if exp.revealed %}
+                    ✅ Identity revealed as: <strong>{{ exp.revealed_identity }}</strong>
+                    {% else %}
+                    ❌ Identity remained: <strong>{{ exp.revealed_identity }}</strong>
+                    {% endif %}
+                </div>
+            </a>
+            {% endfor %}
+        </div>
+        {% else %}
+        <div class="no-experiments">
+            <h2>No Experiments Found</h2>
+            <p>No experiment results found in ./identity-experiments/</p>
+        </div>
+        {% endif %}
+    </div>
+</body>
+</html>
