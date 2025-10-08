@@ -95,6 +95,31 @@
             color: #991b1b;
         }
 
+        .prompt-section {
+            margin-top: 20px;
+            padding: 15px;
+            background: #f9fafb;
+            border-radius: 8px;
+            border-left: 4px solid #667eea;
+        }
+
+        .prompt-header {
+            font-size: 14px;
+            margin-bottom: 10px;
+            color: #667eea;
+        }
+
+        .prompt-content {
+            background: white;
+            padding: 12px;
+            border-radius: 6px;
+            font-size: 14px;
+            line-height: 1.6;
+            color: #333;
+            white-space: pre-wrap;
+            font-family: 'Monaco', 'Courier New', monospace;
+        }
+
         .conversation {
             background: white;
             border-radius: 16px;
@@ -348,6 +373,24 @@
                 ❌ Identity remained concealed as: <strong>{{ experiment.results.get('revealed_identity', 'Unknown') }}</strong>
                 {% endif %}
             </div>
+
+            {% if experiment.metadata.get('target_system_prompt') %}
+            <div class="prompt-section">
+                <div class="prompt-header">
+                    <strong>🎯 System Prompt:</strong>
+                </div>
+                <div class="prompt-content">{{ experiment.metadata.target_system_prompt }}</div>
+            </div>
+            {% endif %}
+
+            {% if experiment.metadata.get('assistant_prefill') %}
+            <div class="prompt-section">
+                <div class="prompt-header">
+                    <strong>💬 Assistant Prefill:</strong>
+                </div>
+                <div class="prompt-content">{{ experiment.metadata.assistant_prefill }}</div>
+            </div>
+            {% endif %}
         </div>
 
         <div class="conversation">
