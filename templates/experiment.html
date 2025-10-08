@@ -329,6 +329,209 @@
             color: #666;
             font-style: italic;
         }
+
+        /* Logit lens heatmap styles */
+        .logit-lens-section {
+            margin-top: 20px;
+            padding-top: 20px;
+            border-top: 2px solid #e5e7eb;
+        }
+
+        .logit-lens-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 15px;
+        }
+
+        .logit-lens-title {
+            font-size: 16px;
+            font-weight: 600;
+            color: #333;
+        }
+
+        .logit-lens-content {
+            display: none;
+        }
+
+        .logit-lens-content.visible {
+            display: block;
+        }
+
+        .heatmap-container {
+            overflow-x: auto;
+            background: white;
+            padding: 15px;
+            border-radius: 6px;
+            border: 1px solid #e5e7eb;
+        }
+
+        .heatmap-grid {
+            display: inline-grid;
+            gap: 2px;
+            font-size: 11px;
+        }
+
+        .heatmap-cell {
+            min-width: 60px;
+            height: 30px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: 3px;
+            font-weight: 500;
+            transition: transform 0.2s;
+            cursor: help;
+            position: relative;
+        }
+
+        .heatmap-cell:hover {
+            transform: scale(1.1);
+            z-index: 10;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+        }
+
+        .heatmap-header {
+            background: #f3f4f6;
+            color: #1f2937;
+            font-weight: 700;
+            position: sticky;
+            top: 0;
+            z-index: 5;
+        }
+
+        .heatmap-layer-label {
+            background: #f3f4f6;
+            color: #1f2937;
+            font-weight: 700;
+            position: sticky;
+            left: 0;
+            z-index: 5;
+        }
+
+        .heatmap-tooltip {
+            display: none;
+            position: absolute;
+            bottom: 100%;
+            left: 50%;
+            transform: translateX(-50%);
+            margin-bottom: 8px;
+            padding: 8px 12px;
+            background: #1f2937;
+            color: white;
+            border-radius: 6px;
+            font-size: 11px;
+            white-space: nowrap;
+            z-index: 1000;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+        }
+
+        .heatmap-cell:hover .heatmap-tooltip {
+            display: block;
+        }
+
+        .legend {
+            display: flex;
+            align-items: center;
+            gap: 15px;
+            margin-top: 10px;
+            padding: 10px;
+            background: #f9fafb;
+            border-radius: 6px;
+            font-size: 12px;
+        }
+
+        .legend-item {
+            display: flex;
+            align-items: center;
+            gap: 5px;
+        }
+
+        .legend-box {
+            width: 20px;
+            height: 20px;
+            border-radius: 3px;
+        }
+
+        /* Highlighted token styles */
+        .highlighted-answer {
+            background: white;
+            padding: 15px;
+            border-radius: 6px;
+            line-height: 2.0;
+            color: #333;
+        }
+
+        .token-highlight {
+            position: relative;
+            padding: 2px 1px;
+            border-radius: 3px;
+            cursor: help;
+            transition: all 0.2s;
+            white-space: pre-wrap;
+        }
+
+        .token-highlight.high-conf {
+            background: rgba(16, 185, 129, 0.2);
+        }
+
+        .token-highlight.medium-conf {
+            background: rgba(245, 158, 11, 0.25);
+        }
+
+        .token-highlight.low-conf {
+            background: rgba(239, 68, 68, 0.25);
+        }
+
+        .token-highlight:hover {
+            filter: brightness(0.9);
+            transform: scale(1.05);
+        }
+
+        .token-tooltip {
+            display: none;
+            position: absolute;
+            bottom: 100%;
+            left: 50%;
+            transform: translateX(-50%);
+            margin-bottom: 8px;
+            padding: 12px;
+            background: #1f2937;
+            color: white;
+            border-radius: 8px;
+            font-size: 12px;
+            white-space: nowrap;
+            z-index: 1000;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+            min-width: 200px;
+        }
+
+        .token-tooltip::after {
+            content: '';
+            position: absolute;
+            top: 100%;
+            left: 50%;
+            transform: translateX(-50%);
+            border: 6px solid transparent;
+            border-top-color: #1f2937;
+        }
+
+        .token-highlight:hover .token-tooltip {
+            display: block;
+        }
+
+        .tooltip-main {
+            font-weight: bold;
+            margin-bottom: 8px;
+            padding-bottom: 8px;
+            border-bottom: 1px solid rgba(255,255,255,0.2);
+        }
+
+        .tooltip-alt {
+            margin-top: 4px;
+            font-size: 11px;
+            opacity: 0.9;
+        }
     </style>
 </head>
 <body>
@@ -413,7 +616,26 @@
 
                 <div class="message">
                     <div class="message-label">💬 Answer</div>
+                    {% if round.token_probabilities %}
+                    <div class="highlighted-answer">
+                        {% for token_data in round.token_probabilities %}
+                        {% set prob_pct = (token_data.logprob|float|exp * 100) %}
+                        {% set conf_class = 'high-conf' if prob_pct > 80 else ('medium-conf' if prob_pct > 50 else 'low-conf') %}
+                        <span class="token-highlight {{ conf_class }}">{{ token_data.token|e }}<span class="token-tooltip">
+                            <div class="tooltip-main">{{ token_data.token|e }}: {{ "%.2f"|format(prob_pct) }}%</div>
+                            {% if token_data.top_logprobs %}
+                            <div style="margin-top: 8px; padding-top: 8px; border-top: 1px solid rgba(255,255,255,0.2);">
+                                <div style="font-size: 10px; opacity: 0.7; margin-bottom: 4px;">Top alternatives:</div>
+                                {% for alt in token_data.top_logprobs[:3] %}
+                                <div class="tooltip-alt">{{ alt.token|e }}: {{ "%.2f"|format(alt.logprob|float|exp * 100) }}%</div>
+                                {% endfor %}
+                            </div>
+                            {% endif %}
+                        </span></span>{% endfor %}
+                    </div>
+                    {% else %}
                     <div class="message-content">{{ round.answer }}</div>
+                    {% endif %}
                 </div>
 
                 {% if round.token_probabilities %}
@@ -460,6 +682,84 @@
                     </div>
                 </div>
                 {% endif %}
+
+                {% if round.logit_lens %}
+                <div class="logit-lens-section">
+                    <div class="logit-lens-header">
+                        <div class="logit-lens-title">🔬 Logit Lens Heatmap ({{ round.logit_lens|length }} tokens × {{ round.logit_lens[0].num_layers if round.logit_lens else 0 }} layers)</div>
+                        <button class="toggle-button" onclick="toggleLogitLens('round-{{ round.round }}')">
+                            Show Heatmap
+                        </button>
+                    </div>
+
+                    <div class="logit-lens-content" id="round-{{ round.round }}-logit-lens">
+                        <div class="heatmap-container">
+                            {% set num_tokens = round.logit_lens|length %}
+                            {% set num_layers = round.logit_lens[0].num_layers if num_tokens > 0 else 0 %}
+
+                            <div class="heatmap-grid" style="grid-template-columns: 80px repeat({{ num_tokens }}, 60px);">
+                                <!-- Header row with token indices -->
+                                <div class="heatmap-cell heatmap-header">Layer</div>
+                                {% for token_idx in range(num_tokens) %}
+                                <div class="heatmap-cell heatmap-header">T{{ token_idx }}</div>
+                                {% endfor %}
+
+                                <!-- Data rows: one per layer -->
+                                {% for layer_idx in range(num_layers) %}
+                                    <!-- Layer label -->
+                                    <div class="heatmap-cell heatmap-layer-label">L{{ layer_idx }}</div>
+
+                                    <!-- Cells for each token at this layer -->
+                                    {% for token_idx in range(num_tokens) %}
+                                        {% set layer_data = round.logit_lens[token_idx].layers[layer_idx] %}
+                                        {% set top_pred = layer_data.top_predictions[0] %}
+                                        {% set prob_pct = (top_pred.prob * 100) %}
+
+                                        <!-- Color based on probability -->
+                                        {% if prob_pct > 80 %}
+                                            {% set bg_color = 'rgba(16, 185, 129, ' ~ (prob_pct / 100) ~ ')' %}
+                                        {% elif prob_pct > 50 %}
+                                            {% set bg_color = 'rgba(245, 158, 11, ' ~ (prob_pct / 100) ~ ')' %}
+                                        {% else %}
+                                            {% set bg_color = 'rgba(239, 68, 68, ' ~ (prob_pct / 100) ~ ')' %}
+                                        {% endif %}
+
+                                        <div class="heatmap-cell" style="background: {{ bg_color }}; color: {{ '#fff' if prob_pct > 50 else '#000' }};">
+                                            {{ top_pred.token|e|truncate(8, True, '') }}
+                                            <div class="heatmap-tooltip">
+                                                <strong>Layer {{ layer_idx }}</strong>, Token {{ token_idx }}<br>
+                                                Top: "{{ top_pred.token|e }}" ({{ "%.1f"|format(prob_pct) }}%)<br>
+                                                {% if layer_data.top_predictions|length > 1 %}
+                                                2nd: "{{ layer_data.top_predictions[1].token|e }}" ({{ "%.1f"|format(layer_data.top_predictions[1].prob * 100) }}%)
+                                                {% endif %}
+                                            </div>
+                                        </div>
+                                    {% endfor %}
+                                {% endfor %}
+                            </div>
+
+                            <div class="legend">
+                                <span style="font-weight: 600;">Probability:</span>
+                                <div class="legend-item">
+                                    <div class="legend-box" style="background: rgba(16, 185, 129, 0.9);"></div>
+                                    <span>High (>80%)</span>
+                                </div>
+                                <div class="legend-item">
+                                    <div class="legend-box" style="background: rgba(245, 158, 11, 0.7);"></div>
+                                    <span>Medium (50-80%)</span>
+                                </div>
+                                <div class="legend-item">
+                                    <div class="legend-box" style="background: rgba(239, 68, 68, 0.5);"></div>
+                                    <span>Low (<50%)</span>
+                                </div>
+                                <div style="margin-left: auto; font-size: 11px; color: #666;">
+                                    Hover over cells for details
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                {% endif %}
             </div>
             {% endfor %}
         </div>
@@ -476,6 +776,19 @@
             } else {
                 content.classList.add('visible');
                 button.textContent = 'Hide Tokens';
+            }
+        }
+
+        function toggleLogitLens(roundId) {
+            const content = document.getElementById(roundId + '-logit-lens');
+            const button = event.target;
+
+            if (content.classList.contains('visible')) {
+                content.classList.remove('visible');
+                button.textContent = 'Show Heatmap';
+            } else {
+                content.classList.add('visible');
+                button.textContent = 'Hide Heatmap';
             }
         }
 

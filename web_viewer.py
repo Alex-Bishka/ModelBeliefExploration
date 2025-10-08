@@ -26,6 +26,35 @@ EXPERIMENTS_DIR = Path("./identity-experiments")
 active_sessions = {}
 
 
+def cleanup_session(session_id: str):
+    """Clean up a session and free GPU memory."""
+    if session_id not in active_sessions:
+        return
+
+    session_data = active_sessions[session_id]
+
+    # Clean up the agent and model
+    if session_data.get('agent') is not None:
+        agent = session_data['agent']
+
+        # Delete model and tokenizer
+        if hasattr(agent, 'model'):
+            del agent.model
+        if hasattr(agent, 'tokenizer'):
+            del agent.tokenizer
+
+        # Delete agent
+        del session_data['agent']
+        session_data['agent'] = None
+
+        # Clear CUDA cache if available
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+            logger.info(f"Cleaned up GPU memory for session {session_id}")
+
+    logger.info(f"Session {session_id} cleaned up")
+
+
 # Custom Jinja filters
 @app.template_filter('exp')
 def exp_filter(value):
@@ -159,6 +188,17 @@ def start_experiment():
     top_k_logprobs = data.get('top_k_logprobs', 5)
     system_prompt = data.get('system_prompt', "You are Qwen, created by Alibaba Cloud. You are a helpful assistant.")
     assistant_prefill = data.get('assistant_prefill', None)
+    return_logit_lens = data.get('return_logit_lens', False)
+    logit_lens_top_k = data.get('logit_lens_top_k', 10)
+
+    # Clean up all existing sessions to free GPU memory
+    session_ids_to_clean = list(active_sessions.keys())
+    for sid in session_ids_to_clean:
+        cleanup_session(sid)
+        del active_sessions[sid]
+
+    if session_ids_to_clean:
+        logger.info(f"Cleaned up {len(session_ids_to_clean)} old session(s) before starting new experiment")
 
     # Create session ID
     session_id = secrets.token_hex(8)
@@ -177,10 +217,14 @@ def start_experiment():
             'interrogation_style': 'web_interactive',
             'top_k_logprobs': top_k_logprobs,
             'target_system_prompt': system_prompt,
-            'assistant_prefill': assistant_prefill
+            'assistant_prefill': assistant_prefill,
+            'logit_lens_enabled': return_logit_lens,
+            'logit_lens_top_k': logit_lens_top_k if return_logit_lens else None
         },
         'round': 0,
-        'assistant_prefill': assistant_prefill  # Store for use during first question
+        'assistant_prefill': assistant_prefill,  # Store for use during first question
+        'return_logit_lens': return_logit_lens,
+        'logit_lens_top_k': logit_lens_top_k
     }
 
     return jsonify({'session_id': session_id, 'status': 'started'})
@@ -230,6 +274,8 @@ def ask_question():
 
     agent = session_data['agent']
     top_k_logprobs = session_data['metadata']['top_k_logprobs']
+    return_logit_lens = session_data.get('return_logit_lens', False)
+    logit_lens_top_k = session_data.get('logit_lens_top_k', 10)
 
     # Increment round
     session_data['round'] += 1
@@ -240,7 +286,9 @@ def ask_question():
         response_data = agent.call_agent_with_probs(
             user_prompt=question,
             preserve_conversation_history=True,
-            top_k_logprobs=top_k_logprobs
+            top_k_logprobs=top_k_logprobs,
+            return_logit_lens=return_logit_lens,
+            logit_lens_top_k=logit_lens_top_k
         )
     except Exception as e:
         logger.error(f"Error generating response: {e}")
@@ -254,13 +302,23 @@ def ask_question():
         'token_probabilities': response_data['token_probabilities']
     }
 
+    # Add logit lens if available
+    if return_logit_lens and 'logit_lens' in response_data:
+        exchange['logit_lens'] = response_data['logit_lens']
+
     session_data['conversation_history'].append(exchange)
 
-    return jsonify({
+    # Prepare response
+    response_json = {
         'round': round_num,
         'answer': response_data['text'],
         'token_probabilities': response_data['token_probabilities']
-    })
+    }
+
+    if return_logit_lens and 'logit_lens' in response_data:
+        response_json['logit_lens'] = response_data['logit_lens']
+
+    return jsonify(response_json)
 
 
 @app.route('/api/finish-experiment', methods=['POST'])
@@ -299,7 +357,8 @@ def finish_experiment():
     with open(json_path, 'w') as f:
         json.dump(result, f, indent=2)
 
-    # Clean up session
+    # Clean up session and free GPU memory
+    cleanup_session(session_id)
     del active_sessions[session_id]
 
     return jsonify({

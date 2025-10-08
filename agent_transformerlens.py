@@ -106,13 +106,80 @@ class AgentTransformerLens:
             prompt_parts.append("Assistant:")
             return "\n".join(prompt_parts)
 
+    def _compute_logit_lens(
+        self,
+        hidden_states: tuple,
+        top_k: int = 10
+    ) -> Dict[str, Any]:
+        """
+        Compute logit lens: project hidden states at each layer through unembedding.
+
+        This reveals what the model is "thinking" at each layer by seeing what tokens
+        would be predicted if we stopped at that layer.
+
+        Args:
+            hidden_states: Tuple of hidden states from model (one per layer + embedding)
+            top_k: Number of top tokens to return per layer
+
+        Returns:
+            Dictionary with logit lens data for each layer
+        """
+        # Get the LM head (unembedding matrix)
+        lm_head = self.model.lm_head
+
+        # hidden_states is a tuple: (embedding_output, layer_1, layer_2, ..., layer_N)
+        # We want to look at each actual layer (skip the embedding output at index 0)
+        num_layers = len(hidden_states) - 1  # -1 because first is embedding
+
+        layer_predictions = []
+
+        for layer_idx in range(1, len(hidden_states)):
+            # Get hidden state at this layer for the last position
+            # Shape: [batch, seq_len, hidden_size] -> we want [hidden_size]
+            layer_hidden = hidden_states[layer_idx][0, -1, :]  # Last position
+
+            # Project through LM head to get logits
+            # Shape: [hidden_size] -> [vocab_size]
+            layer_logits = lm_head(layer_hidden)
+
+            # Convert to probabilities
+            layer_probs = torch.softmax(layer_logits, dim=-1)
+            layer_log_probs = torch.log_softmax(layer_logits, dim=-1)
+
+            # Get top-k predictions at this layer
+            top_k_probs, top_k_indices = torch.topk(layer_probs, k=min(top_k, len(layer_probs)))
+
+            # Build top predictions list
+            top_predictions = []
+            for i in range(len(top_k_indices)):
+                token_id = top_k_indices[i].item()
+                token_str = self.tokenizer.decode([token_id])
+                top_predictions.append({
+                    "token": token_str,
+                    "token_id": token_id,
+                    "logprob": layer_log_probs[token_id].item(),
+                    "prob": top_k_probs[i].item()
+                })
+
+            layer_predictions.append({
+                "layer": layer_idx - 1,  # 0-indexed layer number (layer 0, 1, 2, ...)
+                "top_predictions": top_predictions
+            })
+
+        return {
+            "num_layers": num_layers,
+            "layers": layer_predictions
+        }
+
     def call_agent_with_probs(
         self,
         user_prompt: str,
         preserve_conversation_history: bool = False,
         max_new_tokens: int = 512,
         temperature: float = 1.0,
-        top_k_logprobs: int = 5
+        top_k_logprobs: int = 5,
+        return_logit_lens: bool = False,
+        logit_lens_top_k: int = 10
     ) -> Dict[str, Any]:
         """
         Generate response with full probability and activation data.
@@ -123,13 +190,15 @@ class AgentTransformerLens:
             max_new_tokens: Maximum tokens to generate
             temperature: Sampling temperature
             top_k_logprobs: Number of top token probabilities to return
+            return_logit_lens: Whether to compute logit lens at each layer
+            logit_lens_top_k: Number of top tokens to return for logit lens at each layer
 
         Returns:
             Dictionary containing:
                 - text: The response text
                 - token_probabilities: List of token probability data
                 - tokens: List of generated token strings
-                - logits: Full logits for each position (optional, can be large)
+                - logit_lens: List of logit lens data per token (if return_logit_lens=True)
         """
         # Build messages
         messages = []
@@ -160,17 +229,26 @@ class AgentTransformerLens:
         # Generate with full outputs
         generated_tokens = []
         token_probabilities = []
+        logit_lens_data = [] if return_logit_lens else None
 
         with torch.no_grad():
             current_ids = input_ids
 
             for step in range(max_new_tokens):
-                # Run model
-                outputs = self.model(current_ids)
+                # Run model with output_hidden_states if we need logit lens
+                outputs = self.model(current_ids, output_hidden_states=return_logit_lens)
                 logits = outputs.logits  # Shape: [batch, seq_len, vocab_size]
 
                 # Get logits for next token (last position)
                 next_token_logits = logits[0, -1, :]  # Shape: [vocab_size]
+
+                # Compute logit lens if requested
+                logit_lens_entry = None
+                if return_logit_lens:
+                    logit_lens_entry = self._compute_logit_lens(
+                        outputs.hidden_states,
+                        top_k=logit_lens_top_k
+                    )
 
                 # Apply temperature
                 if temperature != 1.0:
@@ -212,6 +290,9 @@ class AgentTransformerLens:
                 token_probabilities.append(token_entry)
                 generated_tokens.append(next_token_str)
 
+                if return_logit_lens:
+                    logit_lens_data.append(logit_lens_entry)
+
                 # Check for EOS
                 if next_token_id == self.tokenizer.eos_token_id:
                     break
@@ -233,11 +314,16 @@ class AgentTransformerLens:
                 "content": text_response
             })
 
-        return {
+        result = {
             "text": text_response,
             "token_probabilities": token_probabilities,
             "tokens": generated_tokens
         }
+
+        if return_logit_lens:
+            result["logit_lens"] = logit_lens_data
+
+        return result
 
     def call_agent(self, user_prompt: str, preserve_conversation_history: bool = False) -> str:
         """

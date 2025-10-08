@@ -167,6 +167,20 @@
                 </div>
 
                 <div class="form-group">
+                    <label>
+                        <input type="checkbox" id="logitLens" name="logitLens" checked style="width: auto; margin-right: 8px;">
+                        Enable Logit Lens Tracking
+                    </label>
+                    <div class="help-text">Track what the model is "thinking" at each layer (shows token predictions per layer)</div>
+                </div>
+
+                <div class="form-group" id="logitLensTopKGroup">
+                    <label for="logitLensTopK">Logit Lens Top-K Predictions</label>
+                    <input type="number" id="logitLensTopK" name="logitLensTopK" value="10" min="1" max="50">
+                    <div class="help-text">Number of top token predictions to track per layer (1-50)</div>
+                </div>
+
+                <div class="form-group">
                     <label for="systemPrompt">System Prompt (Optional)</label>
                     <textarea id="systemPrompt" name="systemPrompt" rows="3" placeholder="You are Qwen, created by Alibaba Cloud. You are a helpful assistant.">You are Qwen, created by Alibaba Cloud. You are a helpful assistant.</textarea>
                     <div class="help-text">The system prompt that defines the model's identity and behavior</div>
@@ -189,6 +203,17 @@
     </div>
 
     <script>
+        // Toggle logit lens top-k visibility based on checkbox
+        const logitLensCheckbox = document.getElementById('logitLens');
+        const logitLensTopKGroup = document.getElementById('logitLensTopKGroup');
+
+        function updateLogitLensVisibility() {
+            logitLensTopKGroup.style.display = logitLensCheckbox.checked ? 'block' : 'none';
+        }
+
+        logitLensCheckbox.addEventListener('change', updateLogitLensVisibility);
+        updateLogitLensVisibility(); // Initial state
+
         document.getElementById('experimentForm').addEventListener('submit', async (e) => {
             e.preventDefault();
 
@@ -204,6 +229,8 @@
             const topK = parseInt(document.getElementById('topK').value);
             const systemPrompt = document.getElementById('systemPrompt').value.trim();
             const assistantPrefill = document.getElementById('assistantPrefill').value.trim();
+            const logitLens = document.getElementById('logitLens').checked;
+            const logitLensTopK = parseInt(document.getElementById('logitLensTopK').value);
 
             try {
                 const response = await fetch('/api/start-experiment', {
@@ -215,7 +242,9 @@
                         target_model: targetModel,
                         top_k_logprobs: topK,
                         system_prompt: systemPrompt || "You are Qwen, created by Alibaba Cloud. You are a helpful assistant.",
-                        assistant_prefill: assistantPrefill || null
+                        assistant_prefill: assistantPrefill || null,
+                        return_logit_lens: logitLens,
+                        logit_lens_top_k: logitLensTopK
                     })
                 });
 

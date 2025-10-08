@@ -32,7 +32,9 @@ def run_identity_test_transformerlens(
     output_dir: str = "./identity-experiments",
     top_k_logprobs: int = 5,
     max_new_tokens: int = 512,
-    temperature: float = 1.0
+    temperature: float = 1.0,
+    return_logit_lens: bool = False,
+    logit_lens_top_k: int = 10
 ) -> dict:
     """
     Run fully manual identity test with TransformerLens for local inference.
@@ -43,9 +45,11 @@ def run_identity_test_transformerlens(
         top_k_logprobs: Number of top token probabilities to capture (default: 5)
         max_new_tokens: Maximum tokens to generate per response
         temperature: Sampling temperature
+        return_logit_lens: Whether to compute logit lens at each layer (default: False)
+        logit_lens_top_k: Number of top tokens to return for logit lens at each layer (default: 10)
 
     Returns:
-        Dictionary containing experiment results including token probabilities
+        Dictionary containing experiment results including token probabilities and logit lens
     """
     # Welcome message
     print("\n" + "=" * 100)
@@ -56,6 +60,8 @@ def run_identity_test_transformerlens(
     print("Running locally with full mechanistic interpretability access.")
     print("You decide when to stop by answering y/N after each response.")
     print(f"Token probabilities (top-{top_k_logprobs}) will be captured for analysis.")
+    if return_logit_lens:
+        print(f"Logit lens (top-{logit_lens_top_k} per layer) will be captured for analysis.")
     print("=" * 100)
 
     timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
@@ -69,6 +75,9 @@ def run_identity_test_transformerlens(
     logger.info(f"Top-k logprobs: {top_k_logprobs}")
     logger.info(f"Max new tokens: {max_new_tokens}")
     logger.info(f"Temperature: {temperature}")
+    logger.info(f"Logit lens enabled: {return_logit_lens}")
+    if return_logit_lens:
+        logger.info(f"Logit lens top-k: {logit_lens_top_k}")
     logger.info(f"Output directory: {output_path}")
 
     # Initialize target agent with TransformerLens
@@ -106,7 +115,9 @@ def run_identity_test_transformerlens(
             preserve_conversation_history=True,
             max_new_tokens=max_new_tokens,
             temperature=temperature,
-            top_k_logprobs=top_k_logprobs
+            top_k_logprobs=top_k_logprobs,
+            return_logit_lens=return_logit_lens,
+            logit_lens_top_k=logit_lens_top_k
         )
 
         answer = response_data["text"]
@@ -114,15 +125,23 @@ def run_identity_test_transformerlens(
 
         logger.info(f"Target: {answer}")
         logger.info(f"Captured {len(token_probs)} token probability entries")
+        if return_logit_lens and "logit_lens" in response_data:
+            logger.info(f"Captured logit lens data for {len(response_data['logit_lens'])} tokens")
 
         # Record this exchange
-        conversation_history.append({
+        exchange_data = {
             "round": round_num,
             "question": question,
             "answer": answer,
             "token_probabilities": token_probs,
             "num_tokens": len(token_probs)
-        })
+        }
+
+        # Add logit lens data if available
+        if return_logit_lens and "logit_lens" in response_data:
+            exchange_data["logit_lens"] = response_data["logit_lens"]
+
+        conversation_history.append(exchange_data)
 
         # Ask user if they want to continue
         print("\nContinue? [y/N]: ", end="")
@@ -146,6 +165,8 @@ def run_identity_test_transformerlens(
             "max_new_tokens": max_new_tokens,
             "temperature": temperature,
             "inference_engine": "TransformerLens",
+            "logit_lens_enabled": return_logit_lens,
+            "logit_lens_top_k": logit_lens_top_k if return_logit_lens else None,
         },
         "results": {
             "full_conversation_history": conversation_history,
@@ -167,6 +188,8 @@ def run_identity_test_transformerlens(
     logger.info("EXPERIMENT SUMMARY")
     logger.info(f"Total rounds: {round_num}")
     logger.info(f"Token probabilities captured: top-{top_k_logprobs} per token")
+    if return_logit_lens:
+        logger.info(f"Logit lens captured: top-{logit_lens_top_k} per layer")
     logger.info(f"Conversation history saved to: {json_path}")
     logger.info("=" * 100)
 
