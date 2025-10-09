@@ -221,7 +221,9 @@ class AgentTransformerLens:
         # Build messages
         messages = []
 
-        if self.system_prompt and len(self.conversation_history) == 0:
+        # Always include system prompt at the start if present
+        # _format_messages_to_prompt() will handle prepending it to first user message for Gemma
+        if self.system_prompt:
             messages.append({
                 "role": "system",
                 "content": self.system_prompt
@@ -238,6 +240,9 @@ class AgentTransformerLens:
 
         # Format to prompt
         prompt = self._format_messages_to_prompt(messages)
+
+        logger.info("Message:")
+        logger.info(messages)
 
         # Debug: log the actual prompt being sent
         logger.info(f"Formatted prompt:\n{prompt}\n{'='*80}")
