@@ -296,19 +296,6 @@ def ask_question():
                 device=session_data['device']
             )
 
-            # Apply assistant prefill if provided (with dummy user message to maintain alternation)
-            if session_data.get('assistant_prefill'):
-                logger.info(f"Applying assistant prefill for session {session_id}")
-                # Add a minimal user greeting first to maintain user/assistant alternation
-                agent.conversation_history.append({
-                    'role': 'user',
-                    'content': '[Session started]'
-                })
-                agent.conversation_history.append({
-                    'role': 'assistant',
-                    'content': session_data['assistant_prefill']
-                })
-
             session_data['agent'] = agent
             logger.info(f"Model ready for session {session_id}")
         except Exception as e:
@@ -324,6 +311,12 @@ def ask_question():
     session_data['round'] += 1
     round_num = session_data['round']
 
+    # Use assistant prefill only on first question (round 1)
+    prefill = None
+    if round_num == 1 and session_data.get('assistant_prefill'):
+        prefill = session_data['assistant_prefill']
+        logger.info(f"Using assistant prefill for first question: '{prefill}'")
+
     # Get response with probabilities
     try:
         response_data = agent.call_agent_with_probs(
@@ -331,7 +324,8 @@ def ask_question():
             preserve_conversation_history=True,
             top_k_logprobs=top_k_logprobs,
             return_logit_lens=return_logit_lens,
-            logit_lens_top_k=logit_lens_top_k
+            logit_lens_top_k=logit_lens_top_k,
+            assistant_prefill=prefill
         )
     except Exception as e:
         logger.error(f"Error generating response: {e}")

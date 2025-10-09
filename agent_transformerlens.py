@@ -197,7 +197,8 @@ class AgentTransformerLens:
         temperature: float = 1.0,
         top_k_logprobs: int = 5,
         return_logit_lens: bool = False,
-        logit_lens_top_k: int = 10
+        logit_lens_top_k: int = 10,
+        assistant_prefill: Optional[str] = None
     ) -> Dict[str, Any]:
         """
         Generate response with full probability and activation data.
@@ -210,6 +211,7 @@ class AgentTransformerLens:
             top_k_logprobs: Number of top token probabilities to return
             return_logit_lens: Whether to compute logit lens at each layer
             logit_lens_top_k: Number of top tokens to return for logit lens at each layer
+            assistant_prefill: Optional text to force the assistant to start with
 
         Returns:
             Dictionary containing:
@@ -246,6 +248,17 @@ class AgentTransformerLens:
 
         # Debug: log the actual prompt being sent
         logger.info(f"Formatted prompt:\n{prompt}\n{'='*80}")
+
+        # Add assistant prefill if provided (forces model to start with these tokens)
+        prefill_tokens = []
+        if assistant_prefill:
+            # Ensure prefill ends with a space if it doesn't already
+            prefill_text = assistant_prefill if assistant_prefill.endswith(' ') else assistant_prefill + ' '
+            # Append prefill to the prompt so model continues from there
+            prompt = prompt + prefill_text
+            # Tokenize the prefill separately to track which tokens were prefilled
+            prefill_tokens = self.tokenizer.encode(prefill_text, add_special_tokens=False)
+            logger.info(f"Assistant prefill: '{prefill_text}' ({len(prefill_tokens)} tokens)")
 
         # Tokenize
         input_ids = self.tokenizer.encode(prompt, return_tensors="pt").to(self.device)
@@ -339,6 +352,12 @@ class AgentTransformerLens:
 
         # Strip stop tokens from response
         text_response = text_response.replace('<end_of_turn>', '').replace('<eos>', '').strip()
+
+        # Prepend prefill to the response (since model continued from prefill)
+        if assistant_prefill:
+            # Use the same prefill_text with spacing that was used in the prompt
+            prefill_text = assistant_prefill if assistant_prefill.endswith(' ') else assistant_prefill + ' '
+            text_response = prefill_text + text_response
 
         # Update conversation history if requested
         if preserve_conversation_history:
