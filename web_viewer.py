@@ -15,44 +15,87 @@ import secrets
 
 from agent_transformerlens import AgentTransformerLens
 from logger import logger
+import threading
 
 app = Flask(__name__)
 app.secret_key = secrets.token_hex(16)  # For session management
 
 # Configuration
 EXPERIMENTS_DIR = Path("./identity-experiments")
+DEFAULT_MODEL = "google/gemma-3-12b-it"
+
+# Global model pool - reuse loaded models across sessions
+model_pool = {}  # {model_name: agent_instance}
+model_pool_lock = threading.Lock()
 
 # Active experiment sessions
 active_sessions = {}
 
 
+def get_or_load_model(model_name: str, system_prompt: str = "", device: str = "cuda") -> AgentTransformerLens:
+    """
+    Get model from pool or load it if not present.
+    Clears other models from pool if switching to different model.
+    """
+    with model_pool_lock:
+        # If requesting different model, clear the pool
+        if model_pool and model_name not in model_pool:
+            logger.info(f"Switching to new model {model_name}, clearing pool...")
+            for old_model_name, old_agent in model_pool.items():
+                logger.info(f"Clearing model {old_model_name} from pool")
+                if hasattr(old_agent, 'model'):
+                    del old_agent.model
+                if hasattr(old_agent, 'tokenizer'):
+                    del old_agent.tokenizer
+            model_pool.clear()
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
+
+        # Return existing model if available
+        if model_name in model_pool:
+            logger.info(f"Reusing model {model_name} from pool")
+            agent = model_pool[model_name]
+            # Reset conversation history and system prompt for new session
+            agent.conversation_history = []
+            agent.system_prompt = system_prompt
+            return agent
+
+        # Load new model
+        logger.info(f"Loading new model {model_name} into pool...")
+        agent = AgentTransformerLens(
+            model_name=model_name,
+            system_prompt=system_prompt,
+            device=device,
+            dtype=torch.bfloat16 if device == "cuda" else torch.float32
+        )
+        model_pool[model_name] = agent
+        logger.info(f"Model {model_name} loaded and cached in pool")
+        return agent
+
+
+def prewarm_default_model():
+    """Pre-load the default model on server startup."""
+    logger.info(f"Pre-warming default model: {DEFAULT_MODEL}")
+    try:
+        get_or_load_model(DEFAULT_MODEL, system_prompt="", device="cuda" if torch.cuda.is_available() else "cpu")
+        logger.info(f"Default model {DEFAULT_MODEL} pre-warmed successfully")
+    except Exception as e:
+        logger.error(f"Failed to pre-warm default model: {e}")
+
+
 def cleanup_session(session_id: str):
-    """Clean up a session and free GPU memory."""
+    """Clean up a session (but keep model in pool for reuse)."""
     if session_id not in active_sessions:
         return
 
     session_data = active_sessions[session_id]
 
-    # Clean up the agent and model
+    # Don't delete the model - it stays in the pool for reuse
+    # Just clear the session reference
     if session_data.get('agent') is not None:
-        agent = session_data['agent']
-
-        # Delete model and tokenizer
-        if hasattr(agent, 'model'):
-            del agent.model
-        if hasattr(agent, 'tokenizer'):
-            del agent.tokenizer
-
-        # Delete agent
-        del session_data['agent']
         session_data['agent'] = None
 
-        # Clear CUDA cache if available
-        if torch.cuda.is_available():
-            torch.cuda.empty_cache()
-            logger.info(f"Cleaned up GPU memory for session {session_id}")
-
-    logger.info(f"Session {session_id} cleaned up")
+    logger.info(f"Session {session_id} cleaned up (model kept in pool for reuse)")
 
 
 # Custom Jinja filters
@@ -185,14 +228,14 @@ def run_experiment():
 def start_experiment():
     """Start a new interactive experiment session."""
     data = request.json
-    target_model = data.get('target_model', 'google/gemma-2-2b-it')
+    target_model = data.get('target_model', DEFAULT_MODEL)
     top_k_logprobs = data.get('top_k_logprobs', 5)
     system_prompt = data.get('system_prompt', "You are Qwen, created by Alibaba Cloud. You are a helpful assistant.")
     assistant_prefill = data.get('assistant_prefill', None)
     return_logit_lens = data.get('return_logit_lens', False)
     logit_lens_top_k = data.get('logit_lens_top_k', 10)
 
-    # Clean up all existing sessions to free GPU memory
+    # Clean up all existing sessions (but keep model in pool)
     session_ids_to_clean = list(active_sessions.keys())
     for sid in session_ids_to_clean:
         cleanup_session(sid)
@@ -204,9 +247,9 @@ def start_experiment():
     # Create session ID
     session_id = secrets.token_hex(8)
 
-    # Store session WITHOUT loading model yet (lazy loading)
+    # Store session WITHOUT loading model yet (lazy loading on first question)
     active_sessions[session_id] = {
-        'agent': None,  # Will be loaded on first question
+        'agent': None,  # Will be loaded on first question using model pool
         'model_name': target_model,
         'device': "cuda" if torch.cuda.is_available() else "cpu",
         'conversation_history': [],
@@ -243,15 +286,14 @@ def ask_question():
 
     session_data = active_sessions[session_id]
 
-    # Lazy load model on first question
+    # Lazy load model on first question (reuse from pool if available)
     if session_data['agent'] is None:
-        logger.info(f"Loading model {session_data['model_name']} for session {session_id}...")
+        logger.info(f"Getting model {session_data['model_name']} for session {session_id}...")
         try:
-            agent = AgentTransformerLens(
+            agent = get_or_load_model(
                 model_name=session_data['model_name'],
                 system_prompt=session_data['metadata']['target_system_prompt'],
-                device=session_data['device'],
-                dtype=torch.float16 if session_data['device'] == "cuda" else torch.float32
+                device=session_data['device']
             )
 
             # Apply assistant prefill if provided (with dummy user message to maintain alternation)
@@ -268,7 +310,7 @@ def ask_question():
                 })
 
             session_data['agent'] = agent
-            logger.info(f"Model loaded successfully for session {session_id}")
+            logger.info(f"Model ready for session {session_id}")
         except Exception as e:
             logger.error(f"Error loading model: {e}")
             return jsonify({'error': f'Failed to load model: {str(e)}'}), 500
@@ -471,9 +513,15 @@ if __name__ == '__main__':
     print("🚀 Identity Test Results Viewer")
     print("=" * 80)
     print(f"Experiments directory: {EXPERIMENTS_DIR.absolute()}")
+    print(f"Default model: {DEFAULT_MODEL}")
     print(f"Starting server at: http://localhost:5000")
     print(f"Note: Auto-reload disabled to prevent crashes during model loading")
     print("=" * 80 + "\n")
+
+    # Pre-warm default model for instant first chat
+    print("⏳ Pre-warming default model (this may take 1-2 minutes)...")
+    prewarm_default_model()
+    print("✅ Model pre-warmed and ready!\n")
 
     # Debug mode but no auto-reload (prevents crashes during model loading)
     app.run(debug=True, host='0.0.0.0', port=5000, use_reloader=False)

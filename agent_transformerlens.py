@@ -42,15 +42,33 @@ class AgentTransformerLens:
 
         # Load model with transformers
         self.tokenizer = AutoTokenizer.from_pretrained(model_name)
-        self.model = AutoModelForCausalLM.from_pretrained(
-            model_name,
-            torch_dtype=dtype,
-            device_map=device if device == "cuda" else None
-        )
-        if device == "cpu":
+
+        # For Gemma-3-12B, we need to ensure proper loading
+        if device == "cuda":
+            # Load directly to GPU with proper config
+            self.model = AutoModelForCausalLM.from_pretrained(
+                model_name,
+                torch_dtype=dtype,
+                low_cpu_mem_usage=True,
+                device_map="auto"  # Let it handle device placement
+            )
+        else:
+            self.model = AutoModelForCausalLM.from_pretrained(
+                model_name,
+                torch_dtype=dtype
+            )
             self.model = self.model.to(device)
 
         logger.info(f"Model loaded successfully. Vocab size: {self.tokenizer.vocab_size}")
+        logger.info(f"Model device: {next(self.model.parameters()).device}")
+
+        # Detect stop tokens for Gemma chat template
+        self.stop_token_ids = [self.tokenizer.eos_token_id]
+        # Add <end_of_turn> as stop token for Gemma
+        end_of_turn_ids = self.tokenizer.encode('<end_of_turn>', add_special_tokens=False)
+        if end_of_turn_ids:
+            self.stop_token_ids.extend(end_of_turn_ids)
+        logger.info(f"Stop token IDs: {self.stop_token_ids}")
 
     def _format_messages_to_prompt(self, messages: List[Dict[str, str]]) -> str:
         """
@@ -221,6 +239,9 @@ class AgentTransformerLens:
         # Format to prompt
         prompt = self._format_messages_to_prompt(messages)
 
+        # Debug: log the actual prompt being sent
+        logger.info(f"Formatted prompt:\n{prompt}\n{'='*80}")
+
         # Tokenize
         input_ids = self.tokenizer.encode(prompt, return_tensors="pt").to(self.device)
 
@@ -253,6 +274,14 @@ class AgentTransformerLens:
                 # Apply temperature
                 if temperature != 1.0:
                     next_token_logits = next_token_logits / temperature
+
+                # Clamp logits to prevent numerical instability
+                next_token_logits = torch.clamp(next_token_logits, min=-1e9, max=1e9)
+
+                # Check for NaN/Inf and replace with safe values
+                if torch.isnan(next_token_logits).any() or torch.isinf(next_token_logits).any():
+                    logger.warning("NaN or Inf detected in logits, replacing with uniform distribution")
+                    next_token_logits = torch.zeros_like(next_token_logits)
 
                 # Convert to probabilities
                 probs = torch.softmax(next_token_logits, dim=-1)
@@ -293,8 +322,8 @@ class AgentTransformerLens:
                 if return_logit_lens:
                     logit_lens_data.append(logit_lens_entry)
 
-                # Check for EOS
-                if next_token_id == self.tokenizer.eos_token_id:
+                # Check for stop tokens (EOS or end_of_turn)
+                if next_token_id in self.stop_token_ids:
                     break
 
                 # Append to sequence
@@ -302,6 +331,9 @@ class AgentTransformerLens:
 
         # Decode full response
         text_response = "".join(generated_tokens)
+
+        # Strip stop tokens from response
+        text_response = text_response.replace('<end_of_turn>', '').replace('<eos>', '').strip()
 
         # Update conversation history if requested
         if preserve_conversation_history:
